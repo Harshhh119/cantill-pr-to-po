@@ -1,0 +1,137 @@
+{
+  "version": "v5.0",
+  "document_id": "CORVO-PROC-POL-04",
+  "title": "Corvo Engineering Procurement Policy (PR to PO)",
+  "effective_date": "2026-04-01",
+  "status": "active",
+  "owner": "Head of Procurement",
+  "applicable_plants": ["PUN1", "CHK1"],
+  "clubbing": {
+    "creation_window_days": 14,
+    "need_by_window_days": 7,
+    "group_by": ["resolved_item_code", "plant"],
+    "emergency_escalation": true
+  },
+  "consolidation": {
+    "window_hours": 24,
+    "match_fields": ["supplier_id", "plant", "route"]
+  },
+  "preferred_supplier_config": {
+    "history_window_days": 548,
+    "recency_brackets": [
+      { "max_days": 90, "weight": 1.0 },
+      { "max_days": 365, "weight": 0.5 },
+      { "max_days": 548, "weight": 0.0 }
+    ],
+    "scoring_weights": {
+      "recency_multiplier": 30,
+      "po_count_multiplier": 5,
+      "max_po_count_cap": 10,
+      "contract_bonus": 15,
+      "on_time_multiplier": 0.25,
+      "quality_multiplier": 4.0
+    }
+  },
+  "rules": [
+    {
+      "id": "5.1",
+      "name": "Capex Equipment",
+      "clause": "5.1",
+      "priority": 1,
+      "conditions": {
+        "item_type": ["Capex"]
+      },
+      "outcome": {
+        "decision": "SOURCING_REQUEST",
+        "route": "CAPEX_SOURCING",
+        "supplier_selection": "SUGGEST_CATEGORY",
+        "supplier_count": 5,
+        "requires_capex_approval": true,
+        "reason_template": "Clause 5.1: Item type is Capex. Requires Capex sourcing event with 5 suggested suppliers."
+      }
+    },
+    {
+      "id": "5.2",
+      "name": "Rate Contract",
+      "clause": "5.2",
+      "priority": 2,
+      "conditions": {
+        "has_active_contract_with_ceiling": true
+      },
+      "outcome": {
+        "decision": "PO",
+        "route": "CONTRACT_PO",
+        "supplier_selection": "CONTRACT_SUPPLIER",
+        "pricing": "CONTRACT_RATE",
+        "reason_template": "Clause 5.2: Covered by valid rate contract {contract_id} with available ceiling."
+      }
+    },
+    {
+      "id": "5.3",
+      "name": "Emergency Purchase",
+      "clause": "5.3",
+      "priority": 3,
+      "conditions": {
+        "emergency": true,
+        "value_max": 500000,
+        "bought_active_days": 365
+      },
+      "outcome": {
+        "decision": "PO",
+        "route": "EMERGENCY_PO",
+        "supplier_selection": "PREFERRED_1",
+        "pricing": "REFERENCE_PRICE",
+        "reason_template": "Clause 5.3: Emergency requirement <= INR 5,00,000 with proven purchase history in last 365 days."
+      }
+    },
+    {
+      "id": "5.4",
+      "name": "Spot Purchase",
+      "clause": "5.4",
+      "priority": 4,
+      "conditions": {
+        "value_max": 200000,
+        "bought_active_days": 365
+      },
+      "outcome": {
+        "decision": "PO",
+        "route": "SPOT_PO",
+        "supplier_selection": "PREFERRED_1",
+        "pricing": "REFERENCE_PRICE",
+        "reason_template": "Clause 5.4: Value below INR 2,00,000 with proven purchase history from Active supplier in last 365 days."
+      }
+    },
+    {
+      "id": "5.5",
+      "name": "Request for Quotation (RFQ)",
+      "clause": "5.5",
+      "priority": 5,
+      "conditions": {
+        "value_max": 1000000
+      },
+      "outcome": {
+        "decision": "SOURCING_REQUEST",
+        "route": "RFQ",
+        "supplier_selection": "SUGGEST_PREFERRED_THEN_CATEGORY",
+        "supplier_count": 3,
+        "reason_template": "Clause 5.5: Value below INR 10,00,000 (or unproven small purchase) requires 3 quotes via RFQ."
+      }
+    },
+    {
+      "id": "5.6",
+      "name": "Request for Proposal (RFP)",
+      "clause": "5.6",
+      "priority": 6,
+      "conditions": {
+        "value_min": 1000000
+      },
+      "outcome": {
+        "decision": "SOURCING_REQUEST",
+        "route": "RFP",
+        "supplier_selection": "SUGGEST_PREFERRED_THEN_CATEGORY",
+        "supplier_count": 5,
+        "reason_template": "Clause 5.6: Value INR 10,00,000 or more requires formal RFP with 5 suggested suppliers."
+      }
+    }
+  ]
+}
