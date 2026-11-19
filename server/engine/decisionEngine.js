@@ -312,10 +312,19 @@ function runDecisionEngine(requirements, policyOverride = null) {
         quantity: line.qty,
         uom: line.uom,
         description: line.description,
-        is_emergency: dr.req.is_emergency
+        is_emergency: dr.req.is_emergency,
+        input_index: line.input_index !== undefined ? line.input_index : null
       });
     }
   }
+
+  // Preserve original PR input order for consistent 1-to-1 line export
+  outputRows.sort((a, b) => {
+    if (a.input_index !== null && b.input_index !== null) {
+      return a.input_index - b.input_index;
+    }
+    return 0;
+  });
 
   return {
     requirements: decidedRequirements,

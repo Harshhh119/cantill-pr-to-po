@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
-const { PDFParse } = require('pdf-parse');
+const pdf = require('pdf-parse');
 
 const db = require('../db');
 const { clubPrLines } = require('../engine/clubbingEngine');
@@ -331,11 +331,8 @@ router.post('/policies/propose-amendment', upload.single('file'), async (req, re
   try {
     let amendmentText = '';
     if (req.file) {
-      const pdfParser = new PDFParse(new Uint8Array(req.file.buffer));
-      await pdfParser.load();
-      const textData = await pdfParser.getText();
-      amendmentText = textData.pages ? textData.pages.map(p => p.text).join('\n') : JSON.stringify(textData);
-      pdfParser.destroy();
+      const data = await pdf(req.file.buffer);
+      amendmentText = data.text;
     } else if (req.body && req.body.text) {
       amendmentText = req.body.text;
     } else {
@@ -401,11 +398,8 @@ router.post('/contracts/upload-pdf', upload.single('file'), async (req, res) => 
       return res.status(400).json({ error: 'PDF file is required' });
     }
 
-    const pdfParser = new PDFParse(new Uint8Array(req.file.buffer));
-    await pdfParser.load();
-    const textData = await pdfParser.getText();
-    const fullText = textData.pages ? textData.pages.map(p => p.text).join('\n') : JSON.stringify(textData);
-    pdfParser.destroy();
+    const data = await pdf(req.file.buffer);
+    const fullText = data.text;
 
     // Extract contract metadata from PDF text
     const noMatch = fullText.match(/Contract\s+No\.?\s*([A-Z0-9\-]+)/i);

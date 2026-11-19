@@ -134,9 +134,9 @@ class Database {
     if (!dateStr) {
       return this.policies.find(p => p.version === this.activePolicyVersion) || this.policies[0];
     }
-    // Find active policy where effective_date <= dateStr, sorted by effective_date desc
+    // Find policy where effective_date <= dateStr, sorted by effective_date desc
     const applicable = this.policies
-      .filter(p => p.status === 'active' && p.effective_date <= dateStr)
+      .filter(p => p.status !== 'draft' && p.effective_date <= dateStr)
       .sort((a, b) => b.effective_date.localeCompare(a.effective_date));
 
     return applicable.length > 0 ? applicable[0] : (this.policies.find(p => p.version === this.activePolicyVersion) || this.policies[0]);

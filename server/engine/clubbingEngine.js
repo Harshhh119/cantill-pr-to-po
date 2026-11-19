@@ -2,7 +2,7 @@ const { matchItem } = require('./itemMatcher');
 
 function clubPrLines(prLines, existingRequirementCounter = 1) {
   // 1. Resolve item code and parse dates
-  const parsedLines = prLines.map(l => {
+  const parsedLines = prLines.map((l, idx) => {
     const match = matchItem(l.item_code, l.description);
     const createdDate = new Date(l.created_at.replace(' ', 'T') + (l.created_at.includes(':00') ? 'Z' : ':00Z'));
     const needByDate = new Date(l.need_by_date + 'T00:00:00Z');
@@ -11,6 +11,7 @@ function clubPrLines(prLines, existingRequirementCounter = 1) {
 
     return {
       ...l,
+      input_index: l.input_index !== undefined ? l.input_index : idx,
       resolved_item_code: match.resolved_item_code,
       item: match.item,
       confidence: match.confidence,
