@@ -145,3 +145,102 @@ Sourcing requests (`RFQ`, `RFP`, `CAPEX_SOURCING`, `NEW_ITEM_SOURCING`) are neve
 | **12. Capex Item** | PR-26-00047/1 | ITM-1071 | CAPEX_SOURCING | S045;S047;S020;S048;S046 | 6,036,704 | **100% Match** |
 | **13. New Item** | PR-26-00170/1 | NEW | NEW_ITEM_SOURCING | None | 141,100 | **100% Match** |
 | **14. Consolidation** | PR-26-00034/1 | ITM-1009 | CONTRACT_PO | S007 (PO-0003) | Consolidated | **100% Match** |
+
+---
+
+## 6. Blind Test Execution & Policy Amendment v5.1 Analysis
+
+### 6.1 Blind Test Overview
+On 19 November 2026, the engine processed the blind test package comprising:
+1. `hidden_pr_batch.csv`: 190 requisition lines spanning 23 November 2026 through 11 December 2026.
+2. `Corvo_Policy_Amendment_1_v5.1.pdf`: Executive amendment issued by the Procurement Committee and CFO, effective **1 December 2026**.
+
+Two complete execution runs and a snapshot export of preferred supplier rankings were generated and exported to the `submission/` directory:
+* `submission/harsh_vardhan__run1.csv`: 190 PR lines evaluated strictly under baseline Policy `v5.0`.
+* `submission/harsh_vardhan__run2.csv`: 190 PR lines evaluated under active Policy `v5.1` with date-based policy inheritance.
+* `submission/harsh_vardhan__preferred.csv`: Ranked preferred suppliers as of **2026-12-01** (top 3 per item, 155 lines total).
+
+---
+
+### 6.2 Data Anomalies & Edge Cases in `hidden_pr_batch.csv`
+
+During the batch intake of `hidden_pr_batch.csv`, several notable edge cases were encountered and handled deterministically:
+
+1. **Zero Quantity Requisition (`PR-26-00674/1`)**:
+   * *Observation*: Requisition `PR-26-00674` for item `ITM-1034` (Encoder for CNC spindle) specifies `quantity = 0` at estimated unit price ₹42,189.36.
+   * *Resolution*: Total group quantity is computed as $0$, resulting in a requirement valuation `group_value_inr = 0`. With purchase history within 365 days and value $\le$ ₹2,00,000, it evaluates to `SPOT_PO` with ₹0 financial exposure, preserving audit compliance without crashing or corrupting numeric fields.
+2. **Non-Standard Plant Code (`PR-26-00675/1`)**:
+   * *Observation*: Line `PR-26-00675/1` lists plant `PUN2` (Pune Facility 2) rather than the standard `PUN1` or `CHK1`.
+   * *Resolution*: Per Policy Clause 2.2, requisitions are grouped strictly by plant. The engine isolates `PUN2` into its own requirement (`REQ-0022`), preventing erroneous cross-plant clubbing with `PUN1` orders.
+3. **Novel / Uncatalogued Items (`PR-26-00668`, `PR-26-00669`, `PR-26-00670`, `PR-26-00517`)**:
+   * *Observation*: Four requisitions contain descriptions not present in the pre-approved Item Master:
+     * `PR-26-00668/1`: *"Ultrasonic thickness gauge"* (Maintenance, CHK1)
+     * `PR-26-00669/1`: *"Drinking water purifier 50 LPH"* (Admin, CHK1)
+     * `PR-26-00670/1`: *"Thermal imaging camera for maintenance"* (Maintenance, PUN1)
+     * `PR-26-00517/1`: *"housekeeping service for month"* (Admin, PUN1)
+   * *Resolution*: The multi-tier matcher avoids hallucination and resolves all four to `resolved_item_code = 'NEW'`. Each is routed to `NEW_ITEM_SOURCING` under Clause 1.2, valued directly from the requester's estimated price, with `supplier_id = ''` and `suggested_supplier_ids = ''`.
+4. **Multi-Line Requisitions (`PR-26-00662` to `PR-26-00667`)**:
+   * *Observation*: Several requisitions contain multiple lines raised simultaneously across departments (e.g. `PR-26-00662` has lines 1, 2, and 3; `PR-26-00664` has lines 1 and 2).
+   * *Resolution*: Requisition lines are parsed individually, assigned unique requirement groups according to item code and plant windows, and consolidated onto multi-line POs within the 24-hour window where supplier and route align.
+
+---
+
+### 6.3 Policy Amendment No. 1 (`v5.1`) Ingestion & Activation
+
+The amendment document `Corvo_Policy_Amendment_1_v5.1.pdf` was ingested through the application's native Policy Studio PDF parser. The engine parsed three core policy changes:
+
+1. **Change A1 (Packaging Spot Limit Reduction)**:
+   * Spot PO threshold for the `Packaging` category is reduced from ₹2,00,000 to ₹1,00,000.
+   * Packaging requirements $\ge$ ₹1,00,000 must be sourced via RFQ (or RFP if $\ge$ ₹8,00,000).
+2. **Change A2 (RFP Threshold Reduction)**:
+   * Company-wide formal RFP threshold reduced from ₹10,00,000 to ₹8,00,000 across all categories.
+   * Sourcing events $\ge$ ₹8,00,000 require formal RFP with 5 suggested suppliers; requirements $<$ ₹8,00,000 route to RFQ with 3 suggested suppliers.
+3. **Change A3 (Rule 5.2A: Chakan Electrical Safety)**:
+   * At plant `CHK1`, all requirements in `Electrical Spares` worth ₹50,000 or more must undergo a sourcing event (RFQ, or RFP if $\ge$ ₹8,00,000), even if qualifying for emergency or spot PO.
+   * Rate contract POs (Rule 5.2) remain permitted. Rule 5.2A is evaluated immediately after Rule 5.2 (priority 2.4/2.5).
+
+#### Effective Date Boundary Enforcement
+Amendment No. 1 explicitly specifies: **"Effective 1 December 2026"**.
+* Requisitions raised between **23 November 2026 and 30 November 2026** are evaluated strictly under **Policy v5.0**.
+* Requisitions raised on or after **1 December 2026** apply **Policy v5.1** rules.
+* Dual policy resolution is enforced at runtime via `db.getActivePolicy(requirement_date)`, ensuring zero retroactive distortion of November decisions.
+
+---
+
+### 6.4 Comprehensive Comparison: Run 1 (`v5.0`) vs Run 2 (`v5.1`)
+
+Of the 190 processed PR lines, exactly **19 lines** experienced a logical decision/route transition between Run 1 and Run 2, categorized below:
+
+| # | PR Line | Date | Item Code | Category | Plant | Value (INR) | Run 1 (v5.0) | Run 2 (v5.1) | Policy Rule Applied & Explanation |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **1** | PR-26-00603/1 | 2026-12-02 | ITM-1042 | Packaging | PUN1 | 1,79,952 | `SPOT_PO` (S026) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **2** | PR-26-00604/1 | 2026-12-03 | ITM-1042 | Packaging | PUN1 | 1,79,952 | `SPOT_PO` (S026) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **3** | PR-26-00605/1 | 2026-12-03 | ITM-1045 | Packaging | PUN1 | 1,31,090 | `SPOT_PO` (S028) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **4** | PR-26-00606/1 | 2026-12-03 | ITM-1044 | Packaging | CHK1 | 1,48,966 | `SPOT_PO` (S027) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **5** | PR-26-00607/1 | 2026-12-06 | ITM-1043 | Packaging | CHK1 | 1,93,490 | `SPOT_PO` (S026) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **6** | PR-26-00608/1 | 2026-12-08 | ITM-1045 | Packaging | PUN1 | 1,23,454 | `SPOT_PO` (S028) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **7** | PR-26-00610/1 | 2026-12-03 | ITM-1044 | Packaging | CHK1 | 1,51,509 | `SPOT_PO` (S027) | `RFQ` (Sourcing) | **Change A1**: Packaging spot limit reduced to 1L. Requirement $\ge$ 1L must be sourced via RFQ. |
+| **8** | PR-26-00611/1 | 2026-12-07 | ITM-1029 | Electrical Spares | CHK1 | 1,27,195 | `SPOT_PO` (S020) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **9** | PR-26-00612/1 | 2026-12-04 | ITM-1031 | Electrical Spares | CHK1 | 98,996 | `SPOT_PO` (S019) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **10** | PR-26-00613/1 | 2026-12-03 | ITM-1030 | Electrical Spares | CHK1 | 80,492 | `SPOT_PO` (S017) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **11** | PR-26-00614/1 | 2026-12-06 | ITM-1033 | Electrical Spares | CHK1 | 1,31,676 | `SPOT_PO` (S020) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **12** | PR-26-00615/1 | 2026-12-01 | ITM-1034 | Electrical Spares | CHK1 | 82,831 | `SPOT_PO` (S020) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **13** | PR-26-00616/1 | 2026-12-02 | ITM-1028 | Electrical Spares | CHK1 | 1,63,138 | `SPOT_PO` (S019) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **14** | PR-26-00617/1 | 2026-12-09 | ITM-1029 | Electrical Spares | CHK1 | 1,58,994 | `SPOT_PO` (S020) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **15** | PR-26-00618/1 | 2026-12-01 | ITM-1031 | Electrical Spares | CHK1 | 76,497 | `SPOT_PO` (S019) | `RFQ` (Sourcing) | **Rule 5.2A**: Chakan electrical safety mandates RFQ for Electrical Spares $\ge$ 50k. |
+| **16** | PR-26-00621/1 | 2026-12-06 | ITM-1017 | Welding Consumables | CHK1 | 9,65,826 | `RFQ` (3 quotes) | `RFP` (5 quotes) | **Change A2**: Value $\ge$ 8L requires formal RFP with 5 suggested suppliers. |
+| **17** | PR-26-00622/1 | 2026-12-05 | ITM-1018 | Welding Consumables | PUN1 | 8,04,637 | `RFQ` (3 quotes) | `RFP` (5 quotes) | **Change A2**: Value $\ge$ 8L requires formal RFP with 5 suggested suppliers. |
+| **18** | PR-26-00623/1 | 2026-12-06 | ITM-1008 | Steel & Metals | CHK1 | 8,96,537 | `RFQ` (3 quotes) | `RFP` (5 quotes) | **Change A2**: Value $\ge$ 8L requires formal RFP with 5 suggested suppliers. |
+| **19** | PR-26-00625/1 | 2026-12-07 | ITM-1051 | Safety & PPE | PUN1 | 8,19,673 | `RFQ` (3 quotes) | `RFP` (5 quotes) | **Change A2**: Value $\ge$ 8L requires formal RFP with 5 suggested suppliers. |
+
+All remaining 171 requisition lines preserved identical route, decision, and supplier allocations between runs, verifying zero unintended side effects.
+
+---
+
+### 6.5 Preferred Supplier List as of 2026-12-01 (`harsh_vardhan__preferred.csv`)
+
+The export file `submission/harsh_vardhan__preferred.csv` was generated as of `2026-12-01`.
+* **548-Day Qualification Window**: Evaluates historical POs from `2025-06-01` to `2026-12-01`.
+* **Rate Contract Inclusion**: Contract `RC-2025-014` expired on `2026-11-30`; however, per Policy 6.1, suppliers who held a contract starting on or before the ranking date qualify for ranking and retain their contract history bonus. PDF-ingested contracts `RC-2026-031` and `RC-2026-033` remain actively in effect.
+* **Volume**: Top 3 ranked active suppliers across all 73 catalog items (totaling 155 data rows, as certain specialized items have fewer than 3 historical suppliers).
+
